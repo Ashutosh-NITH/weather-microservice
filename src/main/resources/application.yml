@@ -31,12 +31,8 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      ssl:
-        enabled: ${REDIS_SSL_ENABLED:true} # true for Upstash - it requires TLS
-      timeout: 2000ms
+      url: ${REDIS_URL}
+      timeout: 10s
       lettuce:
         pool:
           max-active: 16
@@ -140,8 +136,8 @@ weather:
     ttl-seconds: 10
   rate-limiter:
     per-client:
-      requests: 1
-      period-minutes: 15
+      requests: 10
+      period-minutes: 1
   scheduler:
     current:
       # runs every 25 minutes, refreshes geohash cells whose CurrentWeather

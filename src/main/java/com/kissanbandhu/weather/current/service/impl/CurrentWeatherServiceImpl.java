@@ -63,9 +63,9 @@ public class CurrentWeatherServiceImpl implements CurrentWeatherService {
 
     @Override
     public CurrentWeatherResponseDto getCurrentWeather(double latitude, double longitude, String clientKey) {
-        if (!rateLimiter.tryAcquire(clientKey)) {
+        if (!rateLimiter.tryAcquire(clientKey, "current")) {
             throw new RateLimitExceededException(
-                "Rate limit exceeded: 1 request per 15 minutes per client");
+                    "Rate limit exceeded. 10 requests per minute per client .Please try again later.");
         }
 
         String geohash = geoHashService.encode(latitude, longitude);

@@ -49,8 +49,9 @@ public class WeatherHistoryServiceImpl implements WeatherHistoryService {
 
     @Override
     public HistoryMonthSummaryDto getMonthSummary(double latitude, double longitude, int year, int month, String clientKey) {
-        if (!rateLimiter.tryAcquire(clientKey)) {
-            throw new RateLimitExceededException("Rate limit exceeded: 1 request per 15 minutes per client");
+        if (!rateLimiter.tryAcquire(clientKey, "history")) {
+            throw new RateLimitExceededException(
+                    "Rate limit exceeded. 10 requests per minute per client .Please try again later.");
         }
 
         String geohash = geoHashService.encode(latitude, longitude);
