@@ -5,10 +5,8 @@ WORKDIR /workspace
 COPY gradlew .
 COPY gradlew.bat .
 COPY gradle ./gradle
-
 COPY build.gradle .
 COPY settings.gradle .
-COPY gradle.properties .
 
 RUN chmod +x gradlew
 
