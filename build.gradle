@@ -20,13 +20,8 @@ configurations {
     }
 }
 
-// -----------------------------------------------------------------------
 // Repositories
-// GitHubPackages is required to pull kb-common (JwtAuthenticationFilter,
-// JwtTokenValidator, JwtService, AuthenticationEntryPoint).
-// Credentials are read from gradle.properties (local, gitignored) or
-// environment variables GPR_USER / GPR_TOKEN (CI / Docker build).
-// -----------------------------------------------------------------------
+// GitHubPackages is required to pull kb-common
 repositories {
     mavenCentral()
     maven {
@@ -68,7 +63,7 @@ dependencies {
 
     // --- Security (kb-common wires the actual filters in) ---
     implementation 'org.springframework.boot:spring-boot-starter-security'
-    implementation "com.kissanbandhu:kb-common:0.0.1"
+    implementation "com.kissanbandhu:kb-common:0.1.0"
 
     // --- Resilience ---
     implementation "io.github.resilience4j:resilience4j-spring-boot3:${resilience4jVersion}"
