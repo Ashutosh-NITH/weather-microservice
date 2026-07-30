@@ -1,0 +1,105 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.4'
+    id 'io.spring.dependency-management' version '1.1.6'
+}
+
+group = 'com.kissanbandhu'
+version = '0.0.1-SNAPSHOT'
+description = 'Kissan Bandhu - Weather Microservice (Current / Forecast / History)'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+// -----------------------------------------------------------------------
+// Repositories
+// GitHubPackages is required to pull kb-common (JwtAuthenticationFilter,
+// JwtTokenValidator, JwtService, AuthenticationEntryPoint).
+// Credentials are read from gradle.properties (local, gitignored) or
+// environment variables GPR_USER / GPR_TOKEN (CI / Docker build).
+// -----------------------------------------------------------------------
+repositories {
+    mavenCentral()
+    maven {
+        name = "GitHubPackages"
+        url = uri("https://maven.pkg.github.com/Ashutosh-NITH/kb-common")
+        credentials {
+            username = project.findProperty("gpr.user") ?: System.getenv("GPR_USER")
+            password = project.findProperty("gpr.token") ?: System.getenv("GPR_TOKEN")
+        }
+    }
+}
+
+ext {
+    resilience4jVersion = '2.2.0'
+    springdocVersion = '2.8.17'
+    geohashVersion = '1.4.0'
+}
+
+dependencies {
+    // --- Web / validation ---
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // WebClient (reactor-netty) for calling OpenWeather without switching the app to reactive.
+    // Spring Boot happily runs a servlet app (Tomcat via starter-web) while using WebClient as
+    // an HTTP client bean - this is the standard pattern, NOT a switch to WebFlux server.
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+    // --- Persistence ---
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    runtimeOnly 'org.postgresql:postgresql'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
+    // --- Caching / locking ---
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+    // --- Messaging ---
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+
+    // --- Security (kb-common wires the actual filters in) ---
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation "com.kissanbandhu:kb-common:0.0.1"
+
+    // --- Resilience ---
+    implementation "io.github.resilience4j:resilience4j-spring-boot3:${resilience4jVersion}"
+    implementation "io.github.resilience4j:resilience4j-reactor:${resilience4jVersion}"
+    implementation 'org.springframework.retry:spring-retry'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+
+    // --- Observability ---
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // --- API docs ---
+    implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:${springdocVersion}"
+
+    // --- Geohashing (precision-7 ~150m x 150m cells, matches Redis cache key strategy) ---
+    implementation "ch.hsr:geohash:${geohashVersion}"
+
+    // --- Boilerplate ---
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // --- Tests ---
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.amqp:spring-rabbit-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'io.projectreactor:reactor-test'
+    testImplementation 'org.testcontainers:junit-jupiter:1.20.1'
+    testImplementation 'org.testcontainers:postgresql:1.20.1'
+    testImplementation 'org.testcontainers:rabbitmq:1.20.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

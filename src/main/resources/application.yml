@@ -1,0 +1,223 @@
+spring:
+  application:
+    name: kb-weather-service
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/kb_weather}
+    username: ${DB_USERNAME:kb_weather_user}
+    password: ${DB_PASSWORD:changeme}
+    hikari:
+      # Neon's free tier caps concurrent connections - stay well under it,
+      # especially since this is a single small instance, not a fleet.
+      maximum-pool-size: ${DB_POOL_MAX:5}
+      minimum-idle: 2
+      connection-timeout: 20000
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema. Never let Hibernate auto-DDL run in any real environment.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          batch_size: 20
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:true} # true for Upstash - it requires TLS
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    ssl:
+      enabled: ${RABBITMQ_SSL_ENABLED:true} # true + port 5671 for CloudAMQP (amqps://)
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+        retry:
+          enabled: false # we do explicit retry-queue based retry, see RabbitMqConfig
+        default-requeue-rejected: false
+
+server:
+  port: ${SERVER_PORT:8082}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,circuitbreakers,ratelimiters
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: true
+    rabbit:
+      enabled: true
+    db:
+      enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.kissanbandhu.weather: ${LOG_LEVEL:DEBUG}
+    org.springframework.amqp: INFO
+    org.springframework.security: TRACE
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# -------------------------------------------------------------------------
+# kb-common security properties.
+# These names mirror what kb-auth-service uses to configure JwtService /
+# JwtTokenValidator from kb-common. If your actual property keys differ,
+# update these to match - the values themselves (secret, issuer) must be
+# IDENTICAL to what kb-auth-service signs tokens with, since this service
+# only validates tokens, it never issues them.
+# -------------------------------------------------------------------------
+kb:
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      issuer: ${JWT_ISSUER:kissan-bandhu-auth-service}
+
+# -------------------------------------------------------------------------
+# OpenWeather (free tier)
+# -------------------------------------------------------------------------
+openweather:
+  api:
+    base-url: ${OPENWEATHER_BASE_URL:https://api.openweathermap.org}
+    key: ${OPENWEATHER_API_KEY}
+    current-path: /data/2.5/weather
+    forecast-path: /data/2.5/forecast
+    units: metric
+    timeout-ms: 5000
+
+# -------------------------------------------------------------------------
+# Weather service domain config (values shown are for Current Weather;
+# Forecast/History override ttl-minutes and scheduler cron independently
+# when those domains are added).
+# -------------------------------------------------------------------------
+weather:
+  geohash:
+    precision: 7 # ~150m x 150m cells - shared cache-key granularity across all domains
+  cache:
+    current:
+      ttl-minutes: 35 # MUST stay >= scheduler interval (25 min) or cache goes cold between refreshes
+    forecast:
+      ttl-minutes: 370 # MUST stay >= scheduler interval (360 min / 6h) - same invariant, larger window
+  lock:
+    ttl-seconds: 10
+  rate-limiter:
+    per-client:
+      requests: 1
+      period-minutes: 15
+  scheduler:
+    current:
+      # runs every 25 minutes, refreshes geohash cells whose CurrentWeather
+      # row hasn't been touched in the last 30 minutes (staleness window)
+      cron: "0 */25 * * * *"
+      stale-after-minutes: 30
+    forecast:
+      # runs every 6 hours - OpenWeather's free-tier 5-day forecast doesn't
+      # change meaningfully more often than that
+      cron: "0 0 */6 * * *"
+      stale-after-minutes: 360
+    history:
+      # 1st of every month, 2 AM UTC - aggregates the previous month's
+      # weather_history rows (built from Current Weather's event stream)
+      # into history_month_summary
+      month-summary-cron: "0 0 2 1 * *"
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      openWeatherCurrent:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        automatic-transition-from-open-to-half-open-enabled: true
+      openWeatherForecast:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        automatic-transition-from-open-to-half-open-enabled: true
+  ratelimiter:
+    instances:
+      openWeatherCurrent:
+        limit-for-period: 55 # OpenWeather free tier: 60 calls/min, leave headroom
+        limit-refresh-period: 1m
+        timeout-duration: 3s
+      openWeatherForecast:
+        limit-for-period: 55 # shares the SAME 60/min account budget as current - both instances
+        limit-refresh-period: 1m # draw from the same physical quota, this just enforces it independently
+        timeout-duration: 3s     # per call-site so a forecast burst can't starve current-weather calls
+  retry:
+    instances:
+      openWeatherCurrent:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - com.kissanbandhu.weather.common.exception.ExternalApiException
+          - java.io.IOException
+      openWeatherForecast:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - com.kissanbandhu.weather.common.exception.ExternalApiException
+          - java.io.IOException
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+  datasource:
+    url: jdbc:postgresql://postgres:5432/kb_weather
+  data:
+    redis:
+      host: redis
+  rabbitmq:
+    host: rabbitmq

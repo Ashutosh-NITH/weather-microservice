@@ -1,0 +1,7 @@
+# Copy this file to gradle.properties (which is gitignored) and fill in your
+# GitHub personal access token with `read:packages` scope.
+# Alternatively, export GPR_USER / GPR_TOKEN as environment variables and
+# skip this file entirely - build.gradle checks both.
+
+gpr.user=Ashutosh-NITH
+gpr.token=YOUR_GITHUB_PAT_WITH_READ_PACKAGES_SCOPE
